@@ -1,4 +1,3 @@
-# check_gpu.py
 import torch
 import sys
 

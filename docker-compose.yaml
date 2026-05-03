@@ -1,0 +1,61 @@
+# docker-compose.yaml
+version: '3.8'
+
+services:
+  # Режим обработки видео
+  video-processor:
+    build: .
+    runtime: nvidia  # Для использования GPU
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      # Монтируем папку с видео
+      - ./videos:/app/videos
+      # Монтируем папку для результатов
+      - ./output:/app/output
+      # Монтируем папку для логов
+      - ./data/logs:/app/data/logs
+    command: >
+      python -m src.traffic_detector.cli
+      --mode video
+      --input /app/videos/input.mp4
+      --output /app/output/result.mp4
+      --model /app/data/weights/best.pt
+      --confidence 0.5
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Режим веб-камеры
+  webcam-processor:
+    build: .
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - DISPLAY=${DISPLAY}  # Для отображения GUI (требует X11)
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw  # Для GUI на Linux
+      - ./data/logs:/app/data/logs
+      - ./output:/app/output
+    devices:
+      - /dev/video0:/dev/video0  # Доступ к веб-камере
+    command: >
+      python -m src.traffic_detector.cli
+      --mode cam
+      --camera 0
+      --model /app/data/weights/best.pt
+      --confidence 0.5
+    stdin_open: true
+    tty: true
+
+  # Режим обработки с настройками по умолчанию (для тестирования)
+  default:
+    build: .
+    volumes:
+      - ./data/logs:/app/data/logs
+    command: >
+      python -c "from src.traffic_detector import My_LicensePlate_Model; print('Model loaded successfully!')"

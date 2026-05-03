@@ -1,5 +1,5 @@
 [project]
-name = "traffiс-detector"
+name = "traffic-detector"
 version = "0.1.0"
 description = ""
 authors = [
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [tool.poetry]
-packages = [{include = "traffiс_detector", from = "src"}]
+packages = [{include = "traffic_detector", from = "src"}]
 
 [tool.poetry.dependencies]
 torch = {source = "pytorch-cu130"}
