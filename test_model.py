@@ -63,11 +63,14 @@ def test_on_folder(model_path: str, input_folder: str):
     # Поддерживаемые форматы изображений
     image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp'}
     
-    # Собираем все изображения
+    # Собираем все изображения (исключая папку results)
     image_files = []
-    for ext in image_extensions:
-        image_files.extend(input_path.glob(f"*{ext}"))
-        image_files.extend(input_path.glob(f"*{ext.upper()}"))
+    for file in input_path.iterdir():
+        # Проверяем, что это файл и не в папке results
+        if file.is_file() and file.parent == input_path:
+            # Проверяем расширение без учета регистра
+            if file.suffix.lower() in image_extensions:
+                image_files.append(file)
     
     if not image_files:
         print(f"❌ Изображения не найдены в папке: {input_folder}")
