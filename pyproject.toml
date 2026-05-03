@@ -1,0 +1,35 @@
+[project]
+name = "traffic-detector"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Bondarew Alexey",email = "alexbondarew321@mail.ru"}
+]
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "pandas (>=3.0.2,<4.0.0)",
+    "ultralytics (>=8.4.34,<9.0.0)",
+    "torch (>=2.11.0,<3.0.0)",
+    "torchvision (>=0.26.0,<0.27.0)"
+]
+
+[tool.poetry]
+packages = [{include = "traffic_detector", from = "src"}]
+
+[tool.poetry.dependencies]
+torch = {source = "pytorch-cu130"}
+torchvision = {source = "pytorch-cu130"}
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[[tool.poetry.source]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+priority = "explicit"
+
+[tool.poetry.scripts]
+detect = "src.traffic_detector.cli:main"
+train = "train:train_model"
+validate = "train:validate_model"

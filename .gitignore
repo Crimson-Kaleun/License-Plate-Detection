@@ -10,7 +10,7 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
+#dist/
 downloads/
 eggs/
 .eggs/
@@ -25,6 +25,22 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# Project specific
+data/dataset/
+data/weights/*.pt
+!data/weights/.gitkeep
+data/logs/*.log
+data/test
+runs/
+output/
+videos/*.mp4
+!videos/.gitkeep
+Nums_Work/
+yolov8n.pt
+yolov8s.pt
+check_requirements.py
+
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -105,8 +121,9 @@ ipython_config.py
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
 #   commonly ignored for libraries.
 #   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
+poetry.lock
 #poetry.toml
+
 
 # pdm
 #   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
