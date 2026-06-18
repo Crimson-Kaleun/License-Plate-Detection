@@ -17,7 +17,9 @@ from src.traffic_detector.model_impl import My_LicensePlate_Model
 from src.traffic_detector.logger_config import setup_logger
 
 class LicensePlateApp:
-    def __init__(self, model_path: str, confidence: float = 0.5):
+    def __init__(self, model_path: str, confidence: float = 0.5,
+             enable_ocr: bool = False, ocr_lang: str = 'en',
+             improve: bool = True):
         """
         Инициализация приложения
         """
@@ -27,7 +29,11 @@ class LicensePlateApp:
         try:
             self.detector = My_LicensePlate_Model(
                 model_path=model_path,
-                confidence=confidence
+                confidence=confidence,
+                device='cuda',  # или 'cpu'
+                enable_ocr=enable_ocr,
+                ocr_language=ocr_lang,
+                improve_plate_image=improve
             )
             self.logger.info("Детектор успешно загружен")
         except Exception as e:
@@ -191,6 +197,14 @@ def main():
     
     parser.add_argument('--camera', type=int, default=0,
                        help='ID веб-камеры (для режима cam), по умолчанию: 0')
+    
+    parser.add_argument('--ocr', action='store_true',
+                   help='Включить распознавание текста на номерах')
+    parser.add_argument('--ocr-lang', type=str, default='en,ru',
+                    choices=['en', 'ru', 'en,ru'],
+                    help='Язык для распознавания (en - латиница, ru - кириллица)')
+    parser.add_argument('--improve', action='store_true',
+                    help='Улучшать изображение номера перед распознаванием')
     
     args = parser.parse_args()
     

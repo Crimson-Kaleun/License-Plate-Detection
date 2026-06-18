@@ -1,0 +1,14 @@
+# .dockerignore
+__pycache__
+*.pyc
+.git
+.gitignore
+README.md
+.vscode
+.idea
+data/dataset/
+runs/
+videos/
+output/
+*.log
+poetry.lock

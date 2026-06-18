@@ -1,145 +1,167 @@
 """
-model_impl.py - основной класс для детекции объектов
+model_impl.py - основной класс для детекции и распознавания объектов
 """
 import logging
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 import numpy as np
 import cv2
 
-# Пробуем импортировать YOLO
-try:
-    from ultralytics import YOLO
-    YOLO_AVAILABLE = True
-except ImportError:
-    YOLO_AVAILABLE = False
-    print("YOLO не установлен. Установи: poetry add  ultralytics")
+from ultralytics import YOLO
+from src.traffic_detector.plate_reader import PlateReader, PlateReaderWithCache
 
 
 class My_LicensePlate_Model:
     """
-    Класс для поиска номеров, машин и людей на фото/видео
-    
-    Как использовать:
-        1. detector = My_LicensePlate_Model('путь_к_модели.pt')
-        2. результат = detector.detect_plates(кадр)
+    Класс для детекции объектов и распознавания номеров
     """
     
-    def __init__(self, model_path: str = None, confidence: float = 0.5):
+    def __init__(
+        self, 
+        model_path: Union[str, Path] = "data/weights/best.pt",
+        confidence: float = 0.5,
+        device: str = "cuda",
+        enable_ocr: bool = True,
+        ocr_language: str = 'en',  # 'en' или 'ru' или 'en,ru'
+        use_ocr_cache: bool = True,
+        improve_plate_image: bool = True
+    ):
         """
         Инициализация детектора
         
         Args:
-            model_path: путь к файлу .pt (если None - используем yolov8n.pt)
-            confidence: порог уверенности (0.5 = 50%)
+            model_path: путь к файлу весов модели (.pt)
+            confidence: порог уверенности (0-1)
+            device: устройство ('cpu' или 'cuda')
+            enable_ocr: включить ли распознавание текста
+            ocr_language: язык для распознавания ('en', 'ru', 'en,ru')
+            use_ocr_cache: использовать кеш для OCR
+            improve_plate_image: улучшать ли изображение номера
         """
-        # Настраиваем логирование
+        # Настройка логгера
         self.logger = logging.getLogger(__name__)
         
-        # Проверяем наличие YOLO
-        if not YOLO_AVAILABLE:
-            raise ImportError("Установите ultralytics: poetry add ultralytics")
+        # Загрузка модели YOLO
+        try:
+            self.model = YOLO(str(model_path))
+            self.logger.info(f"✅ Модель YOLO загружена из {model_path}")
+        except Exception as e:
+            self.logger.error(f"❌ Ошибка загрузки модели: {e}")
+            raise
         
-        # Загружаем модель
-        if model_path is None or not Path(model_path).exists():
-            self.logger.warning(f"Модель не найдена, загружаем предобученную yolov8n.pt")
-            model_path = 'yolov8n.pt'
-        
-        self.model = YOLO(model_path)
         self.confidence = confidence
-        self.logger.info(f"Модель загружена: {model_path}")
+        self.device = device
+        self.enable_ocr = enable_ocr
         
-        # Соответствие цифр и названий классов
-        self.class_names = {
-            0: 'plate',    # номер
-            1: 'person',   # человек
-            2: 'car'       # машина
-        }
+        # Классы для детекции
+        self.class_names = {0: 'plate', 1: 'person', 2: 'car'}
+        
+        # Инициализация OCR
+        self.plate_reader = None
+        if enable_ocr:
+            try:
+                reader_class = PlateReaderWithCache if use_ocr_cache else PlateReader
+                self.plate_reader = reader_class(
+                    language=ocr_language,
+                    use_gpu=(device == 'cuda' or device == 0),
+                    improve_image=improve_plate_image
+                )
+                self.logger.info(f"✅ OCR инициализирован (язык: {ocr_language})")
+            except Exception as e:
+                self.logger.warning(f"⚠️ OCR не доступен: {e}")
+                self.enable_ocr = False
     
     def detect_plates(self, frame: np.ndarray) -> List[Dict]:
         """
-        Находит только номера на кадре
+        Детекция номерных знаков с распознаванием текста
         
-        Args:
-            frame: картинка (numpy array в формате BGR)
-            
         Returns:
-            Список словарей. Каждый словарь содержит:
-                - 'bbox': [x1, y1, x2, y2] координаты рамки
-                - 'confidence': уверенность (0-1)
+            Список словарей с информацией о номерах:
+                - 'bbox': [x1, y1, x2, y2]
+                - 'confidence': уверенность детекции
+                - 'class': 'plate'
+                - 'plate_text': распознанный текст
+                - 'plate_confidence': уверенность распознавания
         """
-        # Получаем все объекты
-        all_objects = self._detect_all(frame)
+        detections = self._detect_objects(frame, class_filter='plate')
         
-        # Оставляем только номера
-        plates = [obj for obj in all_objects if obj['class'] == 'plate']
+        # Если включен OCR - распознаем текст на каждом номере
+        if self.enable_ocr and self.plate_reader and detections:
+            for det in detections:
+                plate_result = self.plate_reader.read_plate_from_bbox(
+                    frame,
+                    det['bbox']
+                )
+                det['plate_text'] = plate_result.get('text', '')
+                det['plate_confidence'] = plate_result.get('confidence', 0.0)
+                det['plate_preprocessed'] = plate_result.get('preprocessed')
         
-        self.logger.debug(f"Найдено номеров: {len(plates)}")
-        return plates
+        return detections
     
     def detect_all(self, frame: np.ndarray) -> List[Dict]:
         """
-        Находит все объекты (номера, машины, людей)
-        
-        Returns:
-            Список всех найденных объектов
+        Детекция всех объектов
         """
-        return self._detect_all(frame)
+        return self._detect_objects(frame, class_filter=None)
     
-    def _detect_all(self, frame: np.ndarray) -> List[Dict]:
+    def _detect_objects(
+        self, 
+        frame: np.ndarray, 
+        class_filter: Optional[str] = None
+    ) -> List[Dict]:
         """
-        Внутренний метод для поиска всех объектов
+        Внутренний метод для детекции объектов
         """
         if frame is None:
-            self.logger.warning("Пустой кадр")
+            self.logger.warning("Получен пустой кадр")
             return []
         
         try:
-            # Запускаем YOLO
-            results = self.model(frame, conf=self.confidence, verbose=False)
+            results = self.model(
+                frame, 
+                conf=self.confidence,
+                device=self.device,
+                verbose=False
+            )
             
             detections = []
             
-            # Обрабатываем результаты
             if len(results) > 0 and results[0].boxes is not None:
                 boxes = results[0].boxes
                 
                 for box in boxes:
-                    # Координаты рамки
                     x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-                    
-                    # Уверенность
-                    conf = float(box.conf[0])
-                    
-                    # Класс объекта (0, 1 или 2)
+                    confidence = float(box.conf[0])
                     class_id = int(box.cls[0])
                     class_name = self.class_names.get(class_id, 'unknown')
                     
+                    if class_filter and class_name != class_filter:
+                        continue
+                    
                     detections.append({
                         'bbox': [x1, y1, x2, y2],
-                        'confidence': conf,
+                        'confidence': confidence,
                         'class': class_name,
                         'class_id': class_id
                     })
             
+            self.logger.debug(f"Найдено объектов: {len(detections)}")
             return detections
             
         except Exception as e:
             self.logger.error(f"Ошибка при детекции: {e}")
             return []
     
-    def draw_boxes(self, frame: np.ndarray, detections: List[Dict]) -> np.ndarray:
+    def draw_boxes(
+        self, 
+        frame: np.ndarray, 
+        detections: List[Dict],
+        show_text: bool = True,
+        show_bbox: bool = True
+    ) -> np.ndarray:
         """
-        Рисует рамки на кадре
-        
-        Args:
-            frame: исходное изображение
-            detections: результат работы detect_plates или detect_all
-            
-        Returns:
-            Изображение с нарисованными рамками
+        Рисует рамки и текст на кадре
         """
-        # Цвета для разных объектов (BGR формат)
         colors = {
             'plate': (0, 255, 0),    # зеленый
             'car': (255, 0, 0),      # синий
@@ -149,30 +171,37 @@ class My_LicensePlate_Model:
         for det in detections:
             x1, y1, x2, y2 = det['bbox']
             class_name = det['class']
-            conf = det['confidence']
+            confidence = det['confidence']
             
-            # Выбираем цвет
             color = colors.get(class_name, (255, 255, 255))
             
             # Рисуем рамку
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            if show_bbox:
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             
-            # Добавляем текст
-            text = f"{class_name}: {conf:.2f}"
-            cv2.putText(frame, text, (x1, y1 - 5), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            # Подготовка текста
+            label = f"{class_name}: {confidence:.2f}"
+            if class_name == 'plate' and 'plate_text' in det and det['plate_text']:
+                label += f" [{det['plate_text']}]"
+            
+            # Рисуем текст
+            if show_text:
+                label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+                cv2.rectangle(
+                    frame, 
+                    (x1, y1 - label_size[1] - 5), 
+                    (x1 + label_size[0], y1), 
+                    color, 
+                    -1
+                )
+                cv2.putText(
+                    frame, 
+                    label, 
+                    (x1, y1 - 5), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.5, 
+                    (188, 188, 188), 
+                    1
+                )
         
         return frame
-
-
-# Простой тест (запусти, чтобы проверить)
-if __name__ == "__main__":
-    print("Создаем детектор...")
-    detector = My_LicensePlate_Model()
-    
-    # Проверяем, что класс работает
-    print("✅ Класс успешно создан!")
-    print("Для использования:")
-    print("1. Обучи модель или скачай веса")
-    print("2. detector = My_LicensePlate_Model('путь_к_модели.pt')")
-    print("3. plates = detector.detect_plates(изображение)")
