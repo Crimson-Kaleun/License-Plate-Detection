@@ -28,6 +28,7 @@ MANIFEST
 
 # Project specific
 data/dataset/
+data/models/
 data/weights/*.pt
 !data/weights/.gitkeep
 data/logs/*.log
